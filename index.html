@@ -1,0 +1,1520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>微车同步器优化设计</title>
+<style>
+/* ── 禁止选中文字 ── */
+html, body {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+/* 允许输入框内选中 */
+input, textarea, select, .log-box { -webkit-user-select: text; -moz-user-select: text; user-select: text; }
+:root {
+  --ink:    #f0eee8;
+  --paper:  #111320;
+  --accent: #2ec4b6;
+  --accent2:#ffa62b;
+  --grid:   #2a2e44;
+  --card:   #181b2e;
+  --border: #303660;
+  --ok:     #4ddc82;
+  --warn:   #ffc645;
+  --err:    #ff6b6b;
+  --mono:   'Courier New', Courier, monospace;
+  --label-color: #a0aad0;
+  --hint-color:  #606890;
+  --input-bg:    #0c0e18;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:"PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;
+  background:var(--paper);color:var(--ink);
+  font-size:16px;line-height:1.55;min-height:100vh;
+}
+
+/* ── Header ── */
+.hdr{background:#080a14;display:grid;grid-template-columns:5px 1fr;position:sticky;top:0;z-index:100}
+.hdr-accent{background:var(--accent)}
+.hdr-inner{padding:14px 22px 12px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.hdr h1{font-size:20px;font-weight:700;color:#fff;letter-spacing:.02em}
+.hdr .sub{font-size:12px;color:#6070a0;font-family:var(--mono);margin-top:2px}
+.hdr .badge{margin-left:auto;background:var(--accent);color:#fff;font-size:11px;font-family:var(--mono);padding:4px 14px;border-radius:3px;letter-spacing:.07em;white-space:nowrap}
+.stu-badge{background:rgba(46,196,182,.12);border:1px solid rgba(46,196,182,.35);padding:6px 16px;border-radius:4px;font-size:13px;font-family:var(--mono);color:var(--ink);white-space:nowrap}
+.stu-badge .sb-label{font-size:11px;color:var(--hint-color)}
+.stu-badge .sb-val{font-weight:700;color:var(--accent);margin-top:2px}
+
+/* ── Layout ── */
+.layout{display:grid;grid-template-columns:370px 1fr;min-height:calc(100vh - 56px)}
+.sidebar{border-right:2px solid var(--border);background:var(--card);padding:16px 14px;overflow-y:auto}
+.main{padding:16px;overflow-y:auto;background:var(--paper)}
+
+/* ── Panels ── */
+.panel{border:1.5px solid var(--border);border-radius:6px;margin-bottom:14px;background:var(--card);overflow:hidden}
+.panel-hdr{background:#0a0c16;color:#c0c8f0;padding:9px 14px;font-size:14px;font-family:var(--mono);font-weight:700;letter-spacing:.04em;display:flex;align-items:center;gap:8px}
+.panel-hdr .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0}
+.panel-body{padding:14px 12px}
+
+/* ── Fields ── */
+.field{margin-bottom:12px}
+.field label{display:block;font-size:14px;color:var(--label-color);margin-bottom:5px;font-family:var(--mono);font-weight:600}
+.field label em{color:var(--accent);font-style:normal;font-weight:700}
+.field input[type=number],.field select{width:100%;padding:10px 12px;border:2px solid var(--border);border-radius:4px;font-size:16px;font-family:var(--mono);background:var(--input-bg);color:var(--ink);transition:border-color .15s;-webkit-appearance:none}
+.field select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M0 0l6 8 6-8z' fill='%23a0aad0'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px}
+.field input:focus,.field select:focus{outline:none;border-color:var(--accent);background:#10121e}
+.field .hint{font-size:12px;color:var(--hint-color);margin-top:4px;font-family:var(--mono)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* ── Buttons ── */
+.btn{padding:13px 18px;border:none;border-radius:4px;font-size:16px;font-family:var(--mono);font-weight:700;cursor:pointer;letter-spacing:.04em;transition:all .15s;touch-action:manipulation}
+.btn-run{background:var(--accent);color:#fff;width:100%;margin-top:10px;padding:15px;font-size:17px}
+.btn-run:hover,.btn-run:active{background:#23a99d}
+.btn-run:disabled{background:#444;color:#888;cursor:not-allowed}
+.btn-sec{background:#1e2240;color:#b0b8e0;border:1.5px solid var(--border);margin-top:8px;width:100%}
+.btn-sec:hover,.btn-sec:active{background:#282e55}
+
+/* ── Results ── */
+.result-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:10px;margin-bottom:16px}
+.res-card{border:1.5px solid var(--border);border-radius:6px;padding:12px 14px;background:#141728}
+.res-card .rc-label{font-size:12px;color:var(--label-color);font-family:var(--mono);margin-bottom:5px;line-height:1.4}
+.res-card .rc-val{font-size:24px;font-weight:700;font-family:var(--mono);color:var(--accent)}
+.res-card .rc-unit{font-size:12px;color:var(--hint-color)}
+.res-card .rc-delta{font-size:12px;font-family:var(--mono);margin-top:4px}
+.res-card .rc-delta.up{color:var(--err)}
+.res-card .rc-delta.dn{color:var(--ok)}
+
+/* ── Constraint table ── */
+.ct{width:100%;border-collapse:collapse;font-size:13px;font-family:var(--mono);min-width:680px}
+.ct th{background:#0a0c16;color:#b0b8e0;padding:9px 10px;text-align:left;font-weight:700;font-size:13px}
+.ct td{padding:8px 10px;border-bottom:1px solid var(--grid);color:var(--ink)}
+.ct tr:hover td{background:#222640}
+.badge-ok{background:#1a3828;color:var(--ok);padding:2px 9px;border-radius:10px;font-size:12px;font-weight:700}
+.badge-vio{background:#381818;color:var(--err);padding:2px 9px;border-radius:10px;font-size:12px;font-weight:700}
+.badge-warn{background:#382c08;color:var(--warn);padding:2px 9px;border-radius:10px;font-size:12px;font-weight:700}
+
+/* ── Canvas ── */
+.chart-wrap{border:1.5px solid var(--border);border-radius:6px;background:var(--card);padding:14px;margin-bottom:14px}
+.chart-title{font-family:var(--mono);font-size:13px;color:var(--label-color);margin-bottom:10px}
+canvas{display:block;width:100%}
+
+/* ── Log ── */
+.log-box{border:1.5px solid var(--border);background:#080a12;color:#4ddc82;font-family:var(--mono);font-size:13px;padding:12px;border-radius:4px;height:180px;overflow-y:auto;white-space:pre-wrap}
+.log-box .log-err{color:var(--err)}
+.log-box .log-warn{color:var(--warn)}
+.log-box .log-info{color:var(--accent2)}
+
+/* ── Progress ── */
+.progress-wrap{margin:10px 0}
+.progress-bar{height:8px;background:var(--grid);border-radius:4px;overflow:hidden}
+.progress-fill{height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width .3s}
+.progress-label{font-size:13px;color:var(--label-color);font-family:var(--mono);margin-top:5px}
+
+.divider{border:none;border-top:1px solid var(--grid);margin:14px 0}
+
+/* ── Obj Summary ── */
+.obj-summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:2px solid var(--border);border-radius:6px;overflow:hidden;font-family:var(--mono);font-size:13px}
+.obj-col{padding:12px 14px;border-right:1.5px solid var(--border)}
+.obj-col:last-child{border-right:none}
+.obj-col .oc-head{font-size:11px;color:var(--hint-color);letter-spacing:.07em;text-transform:uppercase;margin-bottom:8px;font-weight:700}
+.obj-col .oc-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--grid);gap:8px}
+.obj-col .oc-row:last-child{border-bottom:none}
+.obj-col .oc-label{color:var(--hint-color);flex-shrink:0}
+.obj-col .oc-val{font-weight:700;color:var(--ink)}
+.obj-col.oc-before{background:#1a1e30}
+.obj-col.oc-after{background:#142820}
+.obj-col.oc-delta{background:#1e1a28}
+.improved{color:var(--ok)}
+.worsened{color:var(--err)}
+.neutral{color:var(--ink)}
+
+.section-title{font-size:13px;font-family:var(--mono);color:var(--accent);letter-spacing:.06em;margin-bottom:10px;margin-top:4px;font-weight:700}
+
+#hintBox{padding:60px 20px;text-align:center;color:var(--hint-color);font-family:var(--mono);font-size:15px;line-height:2.2}
+
+/* ── Score Hero ── */
+.score-hero{background:linear-gradient(135deg,#0d1a40 0%,#0a1230 60%,#1a0d2e 100%);border:2px solid #305080;border-radius:8px;padding:24px;text-align:center;margin-bottom:16px}
+.score-hero .sh-label{font-size:13px;color:#6878a8;margin-bottom:12px;font-family:var(--mono);display:block}
+.score-hero .sh-total{font-size:72px;font-weight:700;color:#7ecfff;font-family:var(--mono);line-height:1;display:block}
+.score-hero .sh-grade{font-size:26px;font-weight:700;margin-top:8px;display:block}
+.score-dims{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:18px}
+.sd-item{background:rgba(255,255,255,.08);border-radius:6px;padding:10px 8px;text-align:center}
+.sd-item .sd-lbl{font-size:11px;color:#6878a8;font-family:var(--mono);line-height:1.4;display:block}
+.sd-item .sd-val{font-size:18px;font-weight:700;color:#7ecfff;margin-top:4px;font-family:var(--mono);display:block}
+
+/* ── Score Table ── */
+.score-table{width:100%;border-collapse:collapse;font-size:13px;font-family:var(--mono);margin-top:8px;table-layout:fixed}
+.score-table th{background:#0a0c16;color:#b0b8e0;padding:9px 10px;border:1px solid var(--grid);font-weight:700;text-align:left;white-space:nowrap}
+.score-table td{padding:8px 10px;border:1px solid var(--grid);color:var(--ink);vertical-align:top;word-break:break-word}
+.score-table tr:hover td{background:#222640}
+
+.advice-box{background:#0a1218;border-left:3px solid var(--accent2);padding:12px 16px;border-radius:0 5px 5px 0;font-size:13px;color:#a0c0d8;line-height:2.1;font-family:var(--mono);margin:8px 0}
+
+/* ── Login ── */
+.login-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;z-index:9999}
+.login-box{background:#161a30;border:2px solid var(--border);padding:36px 32px;border-radius:10px;max-width:460px;width:92%;box-shadow:0 16px 60px rgba(0,0,0,.7)}
+.login-box h2{font-size:22px;font-weight:700;color:var(--accent);margin-bottom:8px}
+.login-box .desc{font-size:13px;color:var(--hint-color);margin-bottom:24px;line-height:1.7}
+.login-field{margin-bottom:18px}
+.login-field label{display:block;margin-bottom:6px;font-size:13px;color:var(--label-color);font-family:var(--mono);font-weight:600}
+.login-field input{width:100%;padding:11px 14px;border:2px solid var(--border);border-radius:5px;font-size:15px;font-family:var(--mono);background:var(--input-bg);color:var(--ink);transition:border-color .2s}
+.login-field input:focus{outline:none;border-color:var(--accent)}
+.login-field .hint{font-size:12px;color:var(--hint-color);margin-top:4px}
+.login-field .err-msg{font-size:12px;color:var(--err);margin-top:4px;display:none}
+.login-btn{width:100%;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:5px;font-size:16px;font-family:var(--mono);font-weight:700;cursor:pointer;transition:background .15s;margin-top:4px}
+.login-btn:hover{background:#23a99d}
+
+/* ── Diagram ── */
+.diagram-wrap{border:1.5px solid var(--border);border-radius:6px;background:var(--card);padding:16px;margin-bottom:14px}
+.diagram-wrap svg{display:block;margin:0 auto;max-width:100%}
+
+/* ── Mobile ── */
+@media(max-width:720px){
+  body{font-size:15px}
+  .hdr h1{font-size:17px}
+  .hdr .badge{display:none}
+  .layout{grid-template-columns:1fr}
+  .sidebar{border-right:none;border-bottom:2px solid var(--border);padding:12px 10px}
+  .main{padding:12px 10px}
+  .grid2{grid-template-columns:1fr}
+  .obj-summary{grid-template-columns:1fr}
+  .obj-col{border-right:none;border-bottom:1.5px solid var(--border)}
+  .obj-col:last-child{border-bottom:none}
+  .panel-body{overflow-x:auto}
+  .ct{min-width:780px}
+  .result-grid{grid-template-columns:1fr 1fr}
+  .btn{font-size:15px;padding:12px}
+  .btn-run{font-size:16px;padding:14px}
+  .field input[type=number],.field select{font-size:15px;padding:10px}
+}
+@media(max-width:400px){
+  .result-grid{grid-template-columns:1fr}
+  .hdr h1{font-size:15px}
+  .res-card .rc-val{font-size:20px}
+}
+</style>
+</head>
+<body oncontextmenu="return false" onselectstart="return false" ondragstart="return false">
+
+<!-- ══ 登录 ══ -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <h2>⚙️ 微车同步器优化设计工具</h2>
+    <div class="desc">
+      本工具基于 fmincon 序列二次规划法（SQP）进行4变量微车同步器摩擦锥面优化。<br>
+      数据来源：微车同步器三维设计与运动分析（袁英平）<br>
+      请先输入您的学号和姓名。
+    </div>
+    <div class="login-field">
+      <label>学号（10位数字）</label>
+      <input type="text" id="li_studentId" placeholder="请输入10位数字学号" maxlength="10"
+             oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+      <div class="hint">示例：2024012345</div>
+      <div class="err-msg" id="li_idErr">请输入准确的10位数字学号</div>
+    </div>
+    <div class="login-field">
+      <label>姓名</label>
+      <input type="text" id="li_studentName" placeholder="请输入您的真实姓名">
+      <div class="err-msg" id="li_nameErr">姓名至少需要2个字符</div>
+    </div>
+    <button class="login-btn" onclick="submitLogin()">✅ 进入设计系统</button>
+  </div>
+</div>
+
+<!-- ══ Header ══ -->
+<div class="hdr">
+  <div class="hdr-accent"></div>
+  <div class="hdr-inner">
+    <div>
+      <h1>微车同步器优化设计工具 · 广西大学 · 车辆工程专业</h1>
+      <div class="sub">SQP + DE 全局优化 · 4变量 · 4非线性约束 · 同步时间最小化</div>
+    </div>
+    <div class="badge">OFFLINE · SQP · v1.0</div>
+    <div class="stu-badge" id="stuBadge" style="display:none">
+      <div class="sb-label">当前学生</div>
+      <div class="sb-val"><span id="dispName">--</span> (<span id="dispId">--</span>)</div>
+    </div>
+  </div>
+</div>
+
+<div class="layout">
+<!-- ═══════════ SIDEBAR ═══════════ -->
+<aside class="sidebar">
+
+  <!-- Fixed Parameters -->
+  <div class="panel">
+    <div class="panel-hdr"><span class="dot"></span>固定物理参数</div>
+    <div class="panel-body">
+      <div class="grid2">
+        <div class="field">
+          <label><em>ω</em> 相对角速度 (rad/s)</label>
+          <input type="number" id="p_w" value="134.4" step="0.1">
+          <div class="hint">摩擦锥面相对角速度</div>
+        </div>
+        <div class="field">
+          <label><em>J<sub>r</sub></em> 转动惯量 (kg·m²)</label>
+          <input type="number" id="p_jr" value="1.578" step="0.001">
+          <div class="hint">换算: 1 kg·m² = 1 N·m·s²</div>
+        </div>
+        <div class="field">
+          <label><em>μ</em> 摩擦系数</label>
+          <input type="number" id="p_u" value="0.1" step="0.01">
+          <div class="hint">锥面摩擦系数</div>
+        </div>
+        <div class="field">
+          <label><em>[p]</em> 许用比压 (MPa)</label>
+          <input type="number" id="p_p" value="2" step="0.1">
+          <div class="hint">摩擦锥面比压许用值</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Design Variables -->
+  <div class="panel">
+    <div class="panel-hdr"><span class="dot"></span>设计变量初值 x₀</div>
+    <div class="panel-body">
+      <div class="section-title">▸ 四个设计变量</div>
+      <div class="field">
+        <label><em>α</em> 锥面锥角 (°)</label>
+        <input type="number" id="x_a" value="7" step="0.1">
+        <div class="hint">范围 6° ~ 7°，半锥角</div>
+      </div>
+      <div class="field">
+        <label><em>R</em> 锥面平均半径 (mm)</label>
+        <input type="number" id="x_R" value="26.375" step="0.001">
+        <div class="hint">范围 26 ~ 27 mm</div>
+      </div>
+      <div class="field">
+        <label><em>b</em> 锥面工作宽度 (mm)</label>
+        <input type="number" id="x_b" value="10.8" step="0.1">
+        <div class="hint">范围 10 ~ 20 mm</div>
+      </div>
+      <div class="field">
+        <label><em>F</em> 换挡力 (N)</label>
+        <input type="number" id="x_F" value="20" step="0.1">
+        <div class="hint">范围 10 ~ 22.5 N</div>
+      </div>
+
+      <hr class="divider">
+      <div class="section-title">▸ 优化算法设置</div>
+      <div class="field">
+        <label>优化算法</label>
+        <select id="p_algo">
+          <option value="de_sqp" selected>DE + SQP 精调（推荐）</option>
+          <option value="de">差分进化 DE（纯全局搜索）</option>
+          <option value="pso">粒子群优化 PSO + SQP</option>
+          <option value="sqp">梯度下降（对比用）</option>
+        </select>
+        <div class="hint" id="algoHint">DE全局搜索 + SQP精调，逃离局部最优</div>
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>种群大小</label>
+          <input type="number" id="p_popSize" value="80" min="20" max="300">
+        </div>
+        <div class="field">
+          <label>最大代数</label>
+          <input type="number" id="p_maxIter" value="500" min="50" max="5000">
+        </div>
+        <div class="field">
+          <label>DE 变异因子 F</label>
+          <input type="number" id="p_deF" value="0.8" step="0.05" min="0.3" max="1.2">
+        </div>
+        <div class="field">
+          <label>DE 交叉概率 CR</label>
+          <input type="number" id="p_deCR" value="0.9" step="0.05" min="0.1" max="1.0">
+        </div>
+      </div>
+
+      <button class="btn btn-run" id="btnRun" onclick="runOptimize()">▶ 开始优化计算</button>
+      <button class="btn btn-sec" onclick="resetToDefault()">↺ 恢复默认初值</button>
+      <button class="btn btn-sec" onclick="evalCurrent()">⚡ 仅评估当前参数</button>
+    </div>
+  </div>
+
+  <!-- Reference formulas -->
+  <div class="panel">
+    <div class="panel-hdr"><span class="dot"></span>公式参考</div>
+    <div class="panel-body" style="font-size:13px;color:var(--label-color);font-family:var(--mono);line-height:2">
+      <strong style="color:var(--accent)">目标函数（同步时间）：</strong><br>
+      t = ω·J<sub>r</sub>·sin(α) / (F·μ·R)<br><br>
+      <strong style="color:var(--accent)">同步力矩：</strong><br>
+      M<sub>s</sub> = F·μ·R / sin(α)<br><br>
+      <strong style="color:var(--accent)">约束条件：</strong><br>
+      c₁: 2b ≤ R （R/b ≥ 2）<br>
+      c₂: R ≤ 5b （R/b ≤ 5）<br>
+      c₃: F·cos(α)/(2πRb) ≤ [p]<br>
+      c₄: tan(α) > μ （防自锁）
+    </div>
+  </div>
+
+</aside>
+
+<!-- ═══════════ MAIN ═══════════ -->
+<main class="main">
+
+  <!-- Progress -->
+  <div class="panel" id="progressPanel" style="display:none">
+    <div class="panel-hdr"><span class="dot"></span>优化进度</div>
+    <div class="panel-body">
+      <div class="progress-wrap">
+        <div class="progress-bar"><div class="progress-fill" id="pFill"></div></div>
+        <div class="progress-label" id="pLabel">正在计算…</div>
+      </div>
+      <div class="log-box" id="logBox"></div>
+    </div>
+  </div>
+
+  <!-- Objective comparison -->
+  <div class="panel" id="objPanel" style="display:none">
+    <div class="panel-hdr"><span class="dot"></span>目标函数对比</div>
+    <div class="panel-body">
+      <div id="objSummary" style="margin-bottom:14px"></div>
+      <div class="result-grid" id="objCards"></div>
+    </div>
+  </div>
+
+  <!-- Variables table -->
+  <div class="panel" id="varPanel" style="display:none">
+    <div class="panel-hdr"><span class="dot"></span>设计变量 — 优化前 vs 优化后</div>
+    <div class="panel-body" style="overflow-x:auto">
+      <table class="ct" id="varTable">
+        <thead><tr>
+          <th>变量</th><th>含义</th><th>优化前</th><th>优化后</th>
+          <th>变化量</th><th>下界</th><th>上界</th><th>状态</th>
+          <th>工程圆整值 <span style="color:var(--accent);font-size:11px">（可修改）</span></th>
+        </tr></thead>
+        <tbody id="varBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Constraints -->
+  <div class="panel" id="conPanel" style="display:none">
+    <div class="panel-hdr"><span class="dot"></span>约束条件校核</div>
+    <div class="panel-body" style="overflow-x:auto">
+      <table class="ct" id="conTable">
+        <thead><tr>
+          <th>#</th><th>约束条件</th><th>类型</th>
+          <th>优化前值</th><th>优化后值</th><th>限值</th><th>结论</th>
+          <th>圆整后值</th><th>圆整后结论</th>
+        </tr></thead>
+        <tbody id="conBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="chart-wrap" id="chartWrap" style="display:none">
+    <div class="chart-title">同步时间 t 随换挡力 F 变化曲线 · 关键工作点标注</div>
+    <canvas id="syncCanvas" height="420"></canvas>
+  </div>
+
+  <!-- Synchro diagram -->
+  <div class="diagram-wrap" id="diagramPanel" style="display:none">
+    <div class="chart-title">同步器摩擦锥面参数示意图</div>
+    <canvas id="coneCanvas" height="320"></canvas>
+  </div>
+
+  <!-- Key mechanics -->
+  <div class="panel" id="mechPanel" style="display:none">
+    <div class="panel-hdr"><span class="dot"></span>关键参数计算结果</div>
+    <div class="panel-body">
+      <div class="result-grid" id="mechCards"></div>
+    </div>
+  </div>
+
+  <!-- Default hint -->
+  <div id="hintBox">
+    ← 在左侧设置参数，点击「开始优化计算」<br><br>
+    或点击「仅评估当前参数」查看当前设计的同步时间与约束情况<br><br>
+    <span style="font-size:13px;color:#404870">基于 MATLAB fmincon 的 JS 移植 · 数据来源：微车同步器三维设计与运动分析（袁英平）</span>
+  </div>
+
+  <!-- Score report -->
+  <div class="panel" id="scoreReportPanel" style="display:none">
+    <div class="panel-hdr"><span class="dot"></span>📊 智能评分报告</div>
+    <div class="panel-body">
+      <div id="scoreHero"></div>
+      <div id="scoreDetails" style="overflow-x:auto"></div>
+      <div style="margin-top:14px">
+        <div class="section-title">▸ 改进建议</div>
+        <div class="advice-box" id="scoreAdvice"></div>
+      </div>
+      <div style="margin-top:14px;padding:12px;background:#0a1810;border:1px solid var(--ok);border-radius:5px;font-size:13px;color:#4ddc82;font-family:var(--mono)">
+        <strong>📦 提交说明：</strong>点击「生成评分报告文件」下载 TXT 报告文件。<br>
+        <strong style="color:var(--warn)">请将 TXT 文件提交给教师！</strong>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-sec" onclick="generateReport()" id="btnGenReport">📥 生成评分报告文件</button>
+        <button class="btn btn-sec" onclick="reCalcScore()" style="background:#0a1e18;border-color:var(--ok);color:var(--ok)">🔄 重新计算评分</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+// LOGIN
+// ════════════════════════════════════════════════════════
+const appState = { studentId:'', studentName:'' };
+
+function submitLogin(){
+  const id = document.getElementById('li_studentId').value.trim();
+  const nm = document.getElementById('li_studentName').value.trim();
+  let ok = true;
+  if(id.length!==10){ document.getElementById('li_idErr').style.display='block'; ok=false; }
+  else document.getElementById('li_idErr').style.display='none';
+  if(nm.length<2){ document.getElementById('li_nameErr').style.display='block'; ok=false; }
+  else document.getElementById('li_nameErr').style.display='none';
+  if(!ok) return;
+  appState.studentId=id; appState.studentName=nm;
+  document.getElementById('loginOverlay').style.display='none';
+  document.getElementById('stuBadge').style.display='';
+  document.getElementById('dispName').textContent=nm;
+  document.getElementById('dispId').textContent=id;
+}
+
+// ════════════════════════════════════════════════════════
+// CONSTANTS
+// ════════════════════════════════════════════════════════
+const LB = [6, 26, 10, 10];
+const UB = [7, 27, 20, 22.5];
+const X0_DEFAULT = [7, 26.375, 10.8, 20];
+const VAR_NAMES = ['α','R','b','F'];
+const VAR_UNITS = ['°','mm','mm','N'];
+const VAR_DESC  = ['锥面锥角（半锥角）','锥面平均半径','锥面工作宽度','换挡力'];
+const VAR_IDS   = ['a','R','b','F'];
+
+const P = {
+  w:  () => +document.getElementById('p_w').value,
+  jr: () => +document.getElementById('p_jr').value,
+  u:  () => +document.getElementById('p_u').value,
+  p:  () => +document.getElementById('p_p').value,
+};
+
+function getX0(){
+  return VAR_IDS.map(id => +document.getElementById('x_'+id).value);
+}
+function resetToDefault(){
+  X0_DEFAULT.forEach((v,i)=>{
+    document.getElementById('x_'+VAR_IDS[i]).value = v;
+  });
+}
+
+// ════════════════════════════════════════════════════════
+// PHYSICS — translated from MATLAB
+// ════════════════════════════════════════════════════════
+function deg2rad(d){ return d*Math.PI/180; }
+
+// Objective: synchronization time t (seconds)
+// t = w * jr * sin(alpha) / (F * u * R)
+// Note: MATLAB uses mm for R, jr has units that make t in seconds
+function syncTime(x){
+  const w=P.w(), jr=P.jr(), u=P.u();
+  const alpha=x[0], R=x[1], b=x[2], F=x[3];
+  return w * jr * Math.sin(deg2rad(alpha)) / (F * u * R);
+}
+
+// Synchronization torque M_s (N·mm)
+function syncTorque(x){
+  const u=P.u();
+  const alpha=x[0], R=x[1], F=x[3];
+  return F * u * R / Math.sin(deg2rad(alpha));
+}
+
+// Cone pressure (MPa)
+function conePressure(x){
+  const alpha=x[0], R=x[1], b=x[2], F=x[3];
+  return F * Math.cos(deg2rad(alpha)) / (2*Math.PI*R*b);
+}
+
+// R/b ratio
+function RbRatio(x){ return x[1]/x[2]; }
+
+// ════════════════════════════════════════════════════════
+// CONSTRAINTS — translated from confun_synchro_1.m
+// ════════════════════════════════════════════════════════
+function evalConstraints(x){
+  const p_allow = P.p(), u = P.u();
+  const alpha=x[0], R=x[1], b=x[2], F=x[3];
+  const cons = [
+    {
+      label:'2b ≤ R（R/b ≥ 2，锥面宽径比下限）',
+      val: 2*b - R,
+      lim: 0,
+      type:'非线性不等式'
+    },
+    {
+      label:'R ≤ 5b（R/b ≤ 5，锥面宽径比上限）',
+      val: R - 5*b,
+      lim: 0,
+      type:'非线性不等式'
+    },
+    {
+      label:'F·cos(α)/(2πRb) ≤ [p]（锥面比压约束）',
+      val: F*Math.cos(deg2rad(alpha))/(2*Math.PI*R*b) - p_allow,
+      lim: 0,
+      type:'非线性不等式'
+    },
+    {
+      label:'tan(α) > μ（防止自锁）',
+      val: u - Math.tan(deg2rad(alpha)),
+      lim: 0,
+      type:'非线性不等式'
+    }
+  ];
+  return cons;
+}
+
+// ════════════════════════════════════════════════════════
+// PENALTY + HELPERS
+// ════════════════════════════════════════════════════════
+function clampBounds(x){ return x.map((xi,i)=>Math.max(LB[i],Math.min(UB[i],xi))); }
+
+function feasible(x){
+  const cs = evalConstraints(x);
+  return cs.every(c=>c.val <= c.lim + 1e-6);
+}
+
+function penaltyVal(x, mu){
+  let p = syncTime(x);
+  evalConstraints(x).forEach(c=>{
+    const v = Math.max(0, c.val - c.lim);
+    p += mu * v * v;
+  });
+  x.forEach((xi,i)=>{
+    p += mu * Math.pow(Math.max(0, LB[i]-xi),2);
+    p += mu * Math.pow(Math.max(0, xi-UB[i]),2);
+  });
+  return p;
+}
+
+function gradient(f,x,eps=1e-6){
+  return x.map((_,i)=>{
+    const xf=[...x]; xf[i]+=eps;
+    const xb=[...x]; xb[i]-=eps;
+    return (f(xf)-f(xb))/(2*eps);
+  });
+}
+
+// ════════════════════════════════════════════════════════
+// SQP LOCAL REFINEMENT
+// ════════════════════════════════════════════════════════
+function sqpRefine(x0, maxIter=400, tol=1e-8){
+  let x = clampBounds([...x0]);
+  const mu = 1e7;
+  for(let it=0;it<maxIter;it++){
+    const g = gradient(xv=>penaltyVal(xv,mu), x);
+    const gn = Math.sqrt(g.reduce((s,gi)=>s+gi*gi,0));
+    if(gn<tol) break;
+    let step = 1.0;
+    const f0 = penaltyVal(x,mu);
+    for(let ls=0;ls<50;ls++){
+      const xn = clampBounds(x.map((xi,i)=>xi - step*g[i]/(gn+1e-12)));
+      if(penaltyVal(xn,mu) <= f0 - 1e-6*step*gn*gn){ x=xn; break; }
+      step *= 0.5;
+    }
+  }
+  return x;
+}
+
+// ════════════════════════════════════════════════════════
+// DIFFERENTIAL EVOLUTION
+// ════════════════════════════════════════════════════════
+async function deOptimize(popSize, maxGen, F_de, CR, logFn, progFn){
+  const N=4, mu=1e8;
+  let pop = Array.from({length:popSize}, ()=>
+    LB.map((lb,i)=>lb+Math.random()*(UB[i]-lb))
+  );
+  let fits = pop.map(x=>penaltyVal(x,mu));
+  let bestIdx = fits.indexOf(Math.min(...fits));
+  let bestX=[...pop[bestIdx]], bestF=fits[bestIdx];
+
+  for(let gen=0;gen<maxGen;gen++){
+    for(let i=0;i<popSize;i++){
+      let idxs=[];
+      while(idxs.length<3){
+        const k=Math.floor(Math.random()*popSize);
+        if(k!==i && !idxs.includes(k)) idxs.push(k);
+      }
+      const [a,b,c]=idxs;
+      const mutant=clampBounds(pop[a].map((xi,j)=>xi+F_de*(pop[b][j]-pop[c][j])));
+      const jRand=Math.floor(Math.random()*N);
+      const trial=pop[i].map((xi,j)=>(Math.random()<CR||j===jRand)?mutant[j]:xi);
+      const fTrial=penaltyVal(trial,mu);
+      if(fTrial<=fits[i]){
+        pop[i]=trial; fits[i]=fTrial;
+        if(fTrial<bestF){ bestF=fTrial; bestX=[...trial]; }
+      }
+    }
+    if(gen%10===0){
+      progFn(gen/maxGen*.85);
+      logFn(`Gen ${String(gen+1).padStart(4,'0')} | t=${syncTime(bestX).toFixed(4).padStart(8)}s | penalty=${bestF.toFixed(4).padStart(12)} | feasible=${feasible(bestX)}`);
+      await new Promise(r=>setTimeout(r,0));
+    }
+  }
+  return bestX;
+}
+
+// ════════════════════════════════════════════════════════
+// PSO
+// ════════════════════════════════════════════════════════
+async function psoOptimize(popSize, maxIter, logFn, progFn){
+  const N=LB.length, mu=1e8;
+  const w=0.7, c1=1.5, c2=1.5;
+  const pos = Array.from({length:popSize}, ()=>LB.map((lb,i)=>lb+Math.random()*(UB[i]-lb)));
+  const vel = Array.from({length:popSize}, ()=>LB.map((lb,i)=>(Math.random()-.5)*(UB[i]-lb)*.2));
+  const pBest = pos.map(p=>[...p]);
+  const pBestF= pos.map(p=>penaltyVal(p,mu));
+  let gBestIdx=pBestF.indexOf(Math.min(...pBestF));
+  let gBest=[...pBest[gBestIdx]], gBestF=pBestF[gBestIdx];
+
+  for(let it=0;it<maxIter;it++){
+    for(let i=0;i<popSize;i++){
+      for(let j=0;j<N;j++){
+        vel[i][j] = w*vel[i][j] + c1*Math.random()*(pBest[i][j]-pos[i][j]) + c2*Math.random()*(gBest[j]-pos[i][j]);
+        const vm=(UB[j]-LB[j])*.3;
+        vel[i][j]=Math.max(-vm,Math.min(vm,vel[i][j]));
+        pos[i][j]=Math.max(LB[j],Math.min(UB[j],pos[i][j]+vel[i][j]));
+      }
+      const f=penaltyVal(pos[i],mu);
+      if(f<pBestF[i]){ pBest[i]=[...pos[i]]; pBestF[i]=f; }
+      if(f<gBestF){ gBest=[...pos[i]]; gBestF=f; }
+    }
+    if(it%10===0){
+      progFn(it/maxIter*.85);
+      logFn(`PSO ${String(it+1).padStart(4,'0')} | t=${syncTime(gBest).toFixed(4).padStart(8)}s | feasible=${feasible(gBest)}`);
+      await new Promise(r=>setTimeout(r,0));
+    }
+  }
+  return gBest;
+}
+
+// ════════════════════════════════════════════════════════
+// MAIN OPTIMIZER DISPATCH
+// ════════════════════════════════════════════════════════
+async function optimize(x0, logFn, progFn){
+  const algo    = document.getElementById('p_algo').value;
+  const popSize = +document.getElementById('p_popSize').value;
+  const maxIter = +document.getElementById('p_maxIter').value;
+  const F_de    = +document.getElementById('p_deF').value;
+  const CR      = +document.getElementById('p_deCR').value;
+
+  let globalBest;
+
+  if(algo==='de'||algo==='de_sqp'){
+    logFn('[阶段1] 差分进化 DE/rand/1/bin …','info');
+    globalBest = await deOptimize(popSize,maxIter,F_de,CR,logFn,progFn);
+    logFn(`DE完成 | t=${syncTime(globalBest).toFixed(4)}s | feasible=${feasible(globalBest)}`,'info');
+  } else if(algo==='pso'){
+    logFn('[阶段1] 粒子群 PSO …','info');
+    globalBest = await psoOptimize(popSize,maxIter,logFn,progFn);
+    logFn(`PSO完成 | t=${syncTime(globalBest).toFixed(4)}s | feasible=${feasible(globalBest)}`,'info');
+  } else {
+    logFn('[梯度下降] 惩罚函数法…','info');
+    let x=clampBounds([...x0]), mu=100;
+    for(let s=0;s<4;s++){
+      mu*=10;
+      const si=Math.floor(maxIter/4);
+      for(let k=0;k<si;k++){
+        const g=gradient(xv=>penaltyVal(xv,mu),x);
+        const gn=Math.sqrt(g.reduce((s,gi)=>s+gi*gi,0));
+        if(gn<1e-8) break;
+        let step=0.3/(s+1);
+        const f0=penaltyVal(x,mu);
+        for(let ls=0;ls<30;ls++){
+          const xn=clampBounds(x.map((xi,i)=>xi-step*g[i]/(gn+1e-12)));
+          if(penaltyVal(xn,mu)<f0-1e-8){ x=xn; break; }
+          step*=0.5;
+        }
+        if(k%20===0){ progFn(s*.25+k/si*.25); await new Promise(r=>setTimeout(r,0)); }
+      }
+    }
+    globalBest=x;
+  }
+
+  // SQP refinement
+  if(algo!=='sqp'){
+    logFn('\n[阶段2] SQP局部精调…','info');
+    progFn(.88);
+    const r1=sqpRefine(globalBest,600,1e-9);
+    const r2=sqpRefine(x0,600,1e-9);
+    let best=globalBest;
+    [globalBest,r1,r2].forEach(c=>{
+      if(feasible(c) && syncTime(c)<syncTime(best)) best=c;
+    });
+    if(!feasible(best)) best=[globalBest,r1,r2].reduce((a,b)=>penaltyVal(a,1e6)<penaltyVal(b,1e6)?a:b);
+    globalBest=best;
+    logFn(`SQP精调后 | t=${syncTime(globalBest).toFixed(4)}s | feasible=${feasible(globalBest)}`,'info');
+  }
+
+  progFn(1);
+  logFn(`\n✓ 优化完成 | 最优同步时间 t = ${syncTime(globalBest).toFixed(4)} s`,'info');
+  return globalBest;
+}
+
+// ════════════════════════════════════════════════════════
+// UI HELPERS
+// ════════════════════════════════════════════════════════
+function fmt(v,dp=3){ if(isNaN(v)||!isFinite(v)) return '—'; return parseFloat(v.toFixed(dp)).toString(); }
+
+function logMsg(msg,type){
+  const box=document.getElementById('logBox');
+  const cls=type==='err'?'log-err':type==='warn'?'log-warn':type==='info'?'log-info':'';
+  box.innerHTML += cls ? `<span class="${cls}">${msg}</span>\n` : msg+'\n';
+  box.scrollTop=box.scrollHeight;
+}
+
+document.getElementById('p_algo').addEventListener('change',function(){
+  const hints={
+    'de_sqp':'DE全局搜索 + SQP精调，逃离局部最优（推荐）',
+    'de':'差分进化：纯全局搜索，种群覆盖整个设计空间',
+    'pso':'粒子群：群体智能全局搜索',
+    'sqp':'梯度下降惩罚函数法（易陷入局部最优）'
+  };
+  document.getElementById('algoHint').textContent=hints[this.value]||'';
+});
+
+// ════════════════════════════════════════════════════════
+// RENDER RESULTS
+// ════════════════════════════════════════════════════════
+function renderResults(x0, xOpt){
+  document.getElementById('hintBox').style.display='none';
+  const noOpt = xOpt===null;
+  const xShow = noOpt ? x0 : xOpt;
+
+  // ── Objective summary
+  document.getElementById('objPanel').style.display='block';
+  const t0 = syncTime(x0);
+  const tOpt = noOpt ? null : syncTime(xShow);
+  const M0 = syncTorque(x0);
+  const MOpt = noOpt ? null : syncTorque(xShow);
+  const p0 = conePressure(x0);
+  const pOpt = noOpt ? null : conePressure(xShow);
+
+  if(noOpt){
+    document.getElementById('objSummary').innerHTML = `
+      <div class="obj-summary" style="grid-template-columns:1fr">
+        <div class="obj-col oc-before">
+          <div class="oc-head">当前参数</div>
+          <div class="oc-row"><span class="oc-label">同步时间 t</span><span class="oc-val">${fmt(t0,4)} s</span></div>
+          <div class="oc-row"><span class="oc-label">同步力矩 M<sub>s</sub></span><span class="oc-val">${fmt(M0,2)} N·mm</span></div>
+          <div class="oc-row"><span class="oc-label">锥面比压 p</span><span class="oc-val">${fmt(p0,4)} MPa</span></div>
+          <div class="oc-row"><span class="oc-label">R/b 比值</span><span class="oc-val">${fmt(RbRatio(x0),3)}</span></div>
+        </div>
+      </div>`;
+  } else {
+    const dt = tOpt - t0;
+    const dtPct = (dt/t0*100);
+    document.getElementById('objSummary').innerHTML = `
+      <div class="obj-summary">
+        <div class="obj-col oc-before">
+          <div class="oc-head">优化前</div>
+          <div class="oc-row"><span class="oc-label">t</span><span class="oc-val">${fmt(t0,4)} s</span></div>
+          <div class="oc-row"><span class="oc-label">M<sub>s</sub></span><span class="oc-val">${fmt(M0,2)} N·mm</span></div>
+          <div class="oc-row"><span class="oc-label">p</span><span class="oc-val">${fmt(p0,4)} MPa</span></div>
+          <div class="oc-row"><span class="oc-label">R/b</span><span class="oc-val">${fmt(RbRatio(x0),3)}</span></div>
+        </div>
+        <div class="obj-col oc-after">
+          <div class="oc-head">优化后</div>
+          <div class="oc-row"><span class="oc-label">t</span><span class="oc-val">${fmt(tOpt,4)} s</span></div>
+          <div class="oc-row"><span class="oc-label">M<sub>s</sub></span><span class="oc-val">${fmt(MOpt,2)} N·mm</span></div>
+          <div class="oc-row"><span class="oc-label">p</span><span class="oc-val">${fmt(pOpt,4)} MPa</span></div>
+          <div class="oc-row"><span class="oc-label">R/b</span><span class="oc-val">${fmt(RbRatio(xShow),3)}</span></div>
+        </div>
+        <div class="obj-col oc-delta">
+          <div class="oc-head">变化</div>
+          <div class="oc-row"><span class="oc-label">Δt</span><span class="oc-val ${dt<0?'improved':'worsened'}">${dt>=0?'+':''}${fmt(dt,4)} s (${dtPct>=0?'+':''}${fmt(dtPct,1)}%)</span></div>
+          <div class="oc-row"><span class="oc-label">ΔM</span><span class="oc-val">${fmt(MOpt-M0,2)} N·mm</span></div>
+          <div class="oc-row"><span class="oc-label">Δp</span><span class="oc-val">${fmt(pOpt-p0,4)} MPa</span></div>
+        </div>
+      </div>`;
+  }
+
+  // ── Result cards
+  const cards = [];
+  cards.push({label:'同步时间 t', val:fmt(syncTime(xShow),4), unit:'s',
+    delta: noOpt?null: (tOpt<t0?`↓ ${fmt(Math.abs(tOpt-t0),4)}s`:`↑ ${fmt(tOpt-t0,4)}s`),
+    cls: noOpt?'':tOpt<t0?'dn':'up'});
+  cards.push({label:'同步力矩 M_s', val:fmt(syncTorque(xShow),2), unit:'N·mm'});
+  cards.push({label:'锥面比压 p', val:fmt(conePressure(xShow),4), unit:'MPa'});
+  cards.push({label:'R/b 比值', val:fmt(RbRatio(xShow),3), unit:''});
+  cards.push({label:'tan(α)', val:fmt(Math.tan(deg2rad(xShow[0])),5), unit:''});
+  cards.push({label:'sin(α)', val:fmt(Math.sin(deg2rad(xShow[0])),5), unit:''});
+
+  document.getElementById('objCards').innerHTML = cards.map(c=>`
+    <div class="res-card">
+      <div class="rc-label">${c.label}</div>
+      <div class="rc-val">${c.val} <span class="rc-unit">${c.unit}</span></div>
+      ${c.delta?`<div class="rc-delta ${c.cls}">${c.delta}</div>`:''}
+    </div>`).join('');
+
+  // ── Variables table
+  document.getElementById('varPanel').style.display='block';
+  let vhtml='';
+  VAR_NAMES.forEach((nm,i)=>{
+    const v0=x0[i], v1=noOpt?null:xShow[i];
+    const delta=noOpt?'—':fmt(v1-v0,4);
+    const inBounds = noOpt || (v1>=LB[i]-1e-6 && v1<=UB[i]+1e-6);
+    const rndVal = noOpt ? fmt(v0,3) : fmt(v1, i===0?1:i===1?2:1);
+    vhtml+=`<tr>
+      <td style="font-weight:700;color:var(--accent)">${nm}</td>
+      <td>${VAR_DESC[i]} (${VAR_UNITS[i]})</td>
+      <td>${fmt(v0,4)}</td>
+      <td>${noOpt?'—':fmt(v1,4)}</td>
+      <td>${delta}</td>
+      <td>${LB[i]}</td><td>${UB[i]}</td>
+      <td>${inBounds?'<span class="badge-ok">✓ 界内</span>':'<span class="badge-vio">✗ 越界</span>'}</td>
+      <td><input type="number" class="rnd-input" id="rnd_${VAR_IDS[i]}" value="${rndVal}"
+           style="width:90px;padding:6px 8px;font-size:14px;font-family:var(--mono);background:var(--input-bg);border:1.5px solid var(--border);color:var(--ink);border-radius:3px"
+           onchange="updateRoundedConstraints()"></td>
+    </tr>`;
+  });
+  document.getElementById('varBody').innerHTML=vhtml;
+
+  // ── Constraints table
+  document.getElementById('conPanel').style.display='block';
+  const cs0 = evalConstraints(x0);
+  const csOpt = noOpt ? null : evalConstraints(xShow);
+  let chtml='';
+  cs0.forEach((c,ci)=>{
+    const v0=c.val, vOpt=noOpt?null:csOpt[ci].val;
+    const vio0 = v0 > c.lim + 1e-6;
+    const vioOpt = noOpt ? null : vOpt > c.lim + 1e-6;
+    chtml+=`<tr>
+      <td>${ci+1}</td>
+      <td>${c.label}</td>
+      <td>${c.type}</td>
+      <td>${fmt(v0,5)}</td>
+      <td>${noOpt?'—':fmt(vOpt,5)}</td>
+      <td>≤ ${c.lim}</td>
+      <td>${noOpt?(vio0?'<span class="badge-vio">✗ 违反</span>':'<span class="badge-ok">✓ 满足</span>'):(vioOpt?'<span class="badge-vio">✗ 违反</span>':'<span class="badge-ok">✓ 满足</span>')}</td>
+      <td id="rnd_con_val_${ci}">—</td>
+      <td id="rnd_con_res_${ci}">—</td>
+    </tr>`;
+  });
+  document.getElementById('conBody').innerHTML=chtml;
+  updateRoundedConstraints();
+
+  // ── Charts
+  drawSyncChart(x0, noOpt?null:xShow);
+  drawConeCanvas(xShow);
+
+  // ── Key mechanics
+  document.getElementById('mechPanel').style.display='block';
+  const xm=xShow;
+  const ms=syncTorque(xm), ts=syncTime(xm), pp=conePressure(xm);
+  const rb=RbRatio(xm), ta=Math.tan(deg2rad(xm[0])), u=P.u();
+  document.getElementById('mechCards').innerHTML = `
+    <div class="res-card"><div class="rc-label">同步时间 t</div><div class="rc-val">${fmt(ts,4)} <span class="rc-unit">s</span></div></div>
+    <div class="res-card"><div class="rc-label">同步力矩 M<sub>s</sub></div><div class="rc-val">${fmt(ms,2)} <span class="rc-unit">N·mm</span></div></div>
+    <div class="res-card"><div class="rc-label">锥面比压 p</div><div class="rc-val">${fmt(pp,4)} <span class="rc-unit">MPa</span></div></div>
+    <div class="res-card"><div class="rc-label">R/b 比值</div><div class="rc-val">${fmt(rb,3)}</div><div class="rc-delta ${rb>=2&&rb<=5?'dn':'up'}">${rb>=2&&rb<=5?'✓ 2~5 范围内':'✗ 超出范围'}</div></div>
+    <div class="res-card"><div class="rc-label">tan(α) vs μ</div><div class="rc-val">${fmt(ta,5)}</div><div class="rc-delta ${ta>u?'dn':'up'}">${ta>u?`✓ > μ=${u} 不自锁`:`✗ ≤ μ=${u} 可能自锁`}</div></div>
+    <div class="res-card"><div class="rc-label">锥角 α</div><div class="rc-val">${fmt(xm[0],3)} <span class="rc-unit">°</span></div></div>
+  `;
+
+  // ── Score
+  updateScoreReport(x0, noOpt?null:xShow);
+}
+
+// ════════════════════════════════════════════════════════
+// CHART: t vs F curve
+// ════════════════════════════════════════════════════════
+function drawSyncChart(xBefore, xAfter){
+  const wrap = document.getElementById('chartWrap');
+  wrap.style.display='block';
+  const canvas = document.getElementById('syncCanvas');
+  const dpr = window.devicePixelRatio||1;
+  const W = Math.max((wrap.clientWidth||680)-28, 200);
+  const Hc = 420;
+  canvas.width=Math.round(W*dpr); canvas.height=Math.round(Hc*dpr);
+  canvas.style.width=W+'px'; canvas.style.height=Hc+'px';
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,W,Hc);
+
+  const pad={l:80,r:28,t:50,b:60};
+  const cw=W-pad.l-pad.r, ch=Hc-pad.t-pad.b;
+
+  // Curve: vary F from 5 to 25, compute t for each
+  const Fmin=5, Fmax=25, N_PTS=300;
+  const curve=(x)=>{
+    const pts=[];
+    for(let i=0;i<=N_PTS;i++){
+      const F=Fmin+i/N_PTS*(Fmax-Fmin);
+      const xc=[x[0],x[1],x[2],F];
+      pts.push({x:F, y:syncTime(xc)});
+    }
+    return pts;
+  };
+  const c0=curve(xBefore);
+  const c1=xAfter?curve(xAfter):null;
+
+  // Y range
+  const allY=[...c0.map(p=>p.y), ...(c1||[]).map(p=>p.y)];
+  const yMax=Math.max(...allY.filter(isFinite))*1.15;
+  const yMin=0;
+  const toX=v=>pad.l+(v-Fmin)/(Fmax-Fmin)*cw;
+  const toY=v=>pad.t+ch-(v-yMin)/(yMax-yMin)*ch;
+
+  // Background
+  ctx.fillStyle='#0c0e18';
+  ctx.fillRect(0,0,W,Hc);
+  ctx.fillStyle='#141728';
+  ctx.fillRect(pad.l,pad.t,cw,ch);
+
+  // Grid
+  ctx.strokeStyle='#222640'; ctx.lineWidth=0.8;
+  for(let v=5;v<=25;v+=2.5){
+    const gx=toX(v);
+    ctx.beginPath(); ctx.moveTo(gx,pad.t); ctx.lineTo(gx,pad.t+ch); ctx.stroke();
+  }
+  for(let i=0;i<=5;i++){
+    const gy=pad.t+i*ch/5;
+    ctx.beginPath(); ctx.moveTo(pad.l,gy); ctx.lineTo(pad.l+cw,gy); ctx.stroke();
+  }
+
+  // Curves
+  const drawCurve=(data,color)=>{
+    ctx.strokeStyle=color; ctx.lineWidth=2.5; ctx.setLineDash([]);
+    ctx.beginPath();
+    data.forEach((p,i)=>{ const px=toX(p.x),py=toY(p.y); i===0?ctx.moveTo(px,py):ctx.lineTo(px,py); });
+    ctx.stroke();
+  };
+  drawCurve(c0,'#56b4ff');
+  if(c1) drawCurve(c1,'#2ec4b6');
+
+  // Mark working points
+  const markPt=(x,label,color)=>{
+    const F=x[3], t=syncTime(x);
+    const px=toX(F), py=toY(t);
+    if(px<pad.l||px>pad.l+cw||py<pad.t||py>pad.t+ch) return;
+    ctx.fillStyle=color;
+    ctx.beginPath(); ctx.arc(px,py,7,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#f0eee8'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(px,py,7,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle=color; ctx.font='bold 12px "Courier New",monospace'; ctx.textAlign='center';
+    ctx.fillText(label, px, py-14);
+    ctx.font='10px "Courier New",monospace'; ctx.fillStyle='#a0a8d0';
+    ctx.fillText(`F=${fmt(F,1)}N, t=${fmt(t,3)}s`, px, py-3 > pad.t+14 ? py+22 : py+22);
+  };
+  markPt(xBefore, xAfter?'初始':'当前', '#56b4ff');
+  if(xAfter) markPt(xAfter, '优化', '#2ec4b6');
+
+  // Axes
+  ctx.strokeStyle='#6878a0'; ctx.lineWidth=1.5; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(pad.l,pad.t); ctx.lineTo(pad.l,pad.t+ch+5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(pad.l-5,pad.t+ch); ctx.lineTo(pad.l+cw,pad.t+ch); ctx.stroke();
+
+  // X ticks
+  ctx.fillStyle='#a0a8d0'; ctx.font='12px "Courier New",monospace'; ctx.textAlign='center';
+  for(let v=5;v<=25;v+=2.5){
+    const gx=toX(v);
+    ctx.beginPath(); ctx.moveTo(gx,pad.t+ch); ctx.lineTo(gx,pad.t+ch+5); ctx.stroke();
+    ctx.fillText(v.toFixed(1), gx, pad.t+ch+17);
+  }
+  // Y ticks
+  const yStep=(yMax-yMin)/5;
+  ctx.textAlign='right';
+  for(let i=0;i<=5;i++){
+    const v=yMin+i*yStep;
+    const gy=toY(v);
+    ctx.beginPath(); ctx.moveTo(pad.l-5,gy); ctx.lineTo(pad.l,gy); ctx.stroke();
+    ctx.fillText(v.toFixed(2), pad.l-8, gy+4);
+  }
+
+  // Labels
+  ctx.save();
+  ctx.translate(16,pad.t+ch/2); ctx.rotate(-Math.PI/2);
+  ctx.textAlign='center'; ctx.font='13px sans-serif'; ctx.fillStyle='#b0b8e0';
+  ctx.fillText('同步时间 t / s', 0, 0);
+  ctx.restore();
+  ctx.textAlign='center'; ctx.font='13px sans-serif'; ctx.fillStyle='#b0b8e0';
+  ctx.fillText('换挡力 F / N', pad.l+cw/2, pad.t+ch+44);
+
+  // Title
+  ctx.textAlign='center'; ctx.font='bold 14px sans-serif'; ctx.fillStyle='#c8d0f0';
+  ctx.fillText('同步时间 t 随换挡力 F 变化曲线', pad.l+cw/2, pad.t-24);
+  ctx.font='11px sans-serif'; ctx.fillStyle='#5868a0';
+  ctx.fillText('其余参数 (α, R, b) 固定，仅变化 F', pad.l+cw/2, pad.t-8);
+
+  // Legend
+  ctx.textAlign='left'; ctx.font='12px sans-serif';
+  const lx=pad.l+10, ly=pad.t+10;
+  ctx.fillStyle='#56b4ff'; ctx.fillRect(lx,ly,22,3);
+  ctx.fillStyle='#c0c8e0'; ctx.fillText(xAfter?'优化前':'当前参数',lx+28,ly+4);
+  if(xAfter){
+    ctx.fillStyle='#2ec4b6'; ctx.fillRect(lx,ly+16,22,3);
+    ctx.fillStyle='#c0c8e0'; ctx.fillText('优化后',lx+28,ly+20);
+  }
+
+  // Plot border
+  ctx.strokeStyle='#303660'; ctx.lineWidth=1.5; ctx.setLineDash([]);
+  ctx.strokeRect(pad.l,pad.t,cw,ch);
+}
+
+// ════════════════════════════════════════════════════════
+// CONE DIAGRAM
+// ════════════════════════════════════════════════════════
+function drawConeCanvas(x){
+  const panel = document.getElementById('diagramPanel');
+  panel.style.display='block';
+  const canvas = document.getElementById('coneCanvas');
+  const dpr = window.devicePixelRatio||1;
+  const W = Math.max((panel.clientWidth||500)-32, 200);
+  const Hc = 320;
+  canvas.width=Math.round(W*dpr); canvas.height=Math.round(Hc*dpr);
+  canvas.style.width=W+'px'; canvas.style.height=Hc+'px';
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,W,Hc);
+  ctx.fillStyle='#0c0e18'; ctx.fillRect(0,0,W,Hc);
+
+  const alpha=x[0], R=x[1], b=x[2], F=x[3];
+  const cx=W/2, cy=Hc/2+10;
+  const scale=3.2;
+
+  // Draw cone cross-section (simplified trapezoid)
+  const halfAngle=deg2rad(alpha);
+  const Rout = R + b/2*Math.sin(halfAngle);
+  const Rin  = R - b/2*Math.sin(halfAngle);
+  const Hcone = b * Math.cos(halfAngle);
+
+  const sw=R*scale; // scale width
+  const sh=Hcone*scale;
+
+  // Trapezoid representing cone cross-section
+  const topW = Rin*scale*0.6;
+  const botW = Rout*scale*0.6;
+
+  ctx.strokeStyle='#2ec4b6'; ctx.lineWidth=2; ctx.setLineDash([]);
+  ctx.fillStyle='rgba(46,196,182,0.1)';
+
+  // Left half
+  ctx.beginPath();
+  ctx.moveTo(cx-topW, cy-sh/2);
+  ctx.lineTo(cx-botW, cy+sh/2);
+  ctx.lineTo(cx+botW, cy+sh/2);
+  ctx.lineTo(cx+topW, cy-sh/2);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+
+  // Center axis
+  ctx.strokeStyle='#404870'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(cx, cy-sh/2-30); ctx.lineTo(cx, cy+sh/2+30); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // R dimension line
+  ctx.strokeStyle='#ffa62b'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx+R*scale*0.6/2+R*scale*0.1, cy); ctx.stroke();
+  ctx.fillStyle='#ffa62b'; ctx.font='bold 12px "Courier New",monospace'; ctx.textAlign='center';
+  ctx.fillText(`R = ${fmt(R,2)} mm`, cx+(topW+botW)/4+20, cy-8);
+
+  // b dimension line
+  ctx.strokeStyle='#ff6b6b'; ctx.lineWidth=1.2;
+  const bx = cx+botW+15;
+  ctx.beginPath(); ctx.moveTo(bx, cy-sh/2); ctx.lineTo(bx, cy+sh/2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bx-5, cy-sh/2); ctx.lineTo(bx+5, cy-sh/2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bx-5, cy+sh/2); ctx.lineTo(bx+5, cy+sh/2); ctx.stroke();
+  ctx.fillStyle='#ff6b6b'; ctx.font='bold 12px "Courier New",monospace'; ctx.textAlign='left';
+  ctx.fillText(`b = ${fmt(b,1)} mm`, bx+8, cy+4);
+
+  // Alpha angle arc
+  ctx.strokeStyle='#56b4ff'; ctx.lineWidth=1.5;
+  const arcR=40;
+  const startA=-Math.PI/2;
+  const endA=startA+halfAngle;
+  ctx.beginPath(); ctx.arc(cx, cy-sh/2, arcR, startA, endA); ctx.stroke();
+  ctx.fillStyle='#56b4ff'; ctx.font='bold 12px "Courier New",monospace'; ctx.textAlign='left';
+  ctx.fillText(`α = ${fmt(alpha,1)}°`, cx+arcR+5, cy-sh/2+5);
+
+  // Force arrow
+  const arrowY = cy-sh/2-20;
+  ctx.strokeStyle='#4ddc82'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(cx-40, arrowY); ctx.lineTo(cx+40, arrowY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+40, arrowY); ctx.lineTo(cx+32, arrowY-5); ctx.lineTo(cx+32, arrowY+5); ctx.closePath();
+  ctx.fillStyle='#4ddc82'; ctx.fill();
+  ctx.fillStyle='#4ddc82'; ctx.font='bold 12px "Courier New",monospace'; ctx.textAlign='center';
+  ctx.fillText(`F = ${fmt(F,1)} N`, cx, arrowY-10);
+
+  // Title
+  ctx.fillStyle='#b0b8e0'; ctx.font='13px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('同步器摩擦锥面参数示意', cx, Hc-12);
+}
+
+// ════════════════════════════════════════════════════════
+// ROUNDED CONSTRAINTS
+// ════════════════════════════════════════════════════════
+function getRounded(){
+  return VAR_IDS.map(id=>{
+    const el=document.getElementById('rnd_'+id);
+    return el ? parseFloat(el.value) : NaN;
+  });
+}
+
+function updateRoundedConstraints(){
+  const xR=getRounded();
+  if(xR.some(v=>isNaN(v))) return;
+  try{
+    const csR = evalConstraints(xR);
+    csR.forEach((c,ci)=>{
+      const valCell=document.getElementById('rnd_con_val_'+ci);
+      const resCell=document.getElementById('rnd_con_res_'+ci);
+      if(!valCell||!resCell) return;
+      const vio = c.val > c.lim + 1e-6;
+      const margin = -(c.val - c.lim);
+      const marginTxt = (margin>=0?'余量 +':'超限 ')+Math.abs(margin).toFixed(4);
+      valCell.textContent = parseFloat(c.val.toFixed(5));
+      resCell.innerHTML = vio
+        ? `<span class="badge-vio">✗ 违反</span><br><small style="color:var(--err);font-size:11px">${marginTxt}</small>`
+        : `<span class="badge-ok">✓ 满足</span><br><small style="color:var(--ok);font-size:11px">${marginTxt}</small>`;
+    });
+  }catch(e){ console.warn(e); }
+}
+
+// ════════════════════════════════════════════════════════
+// SCORING SYSTEM
+// ════════════════════════════════════════════════════════
+let _lastScoreResult = null;
+
+function computeScore(x, isOptimized){
+  const t = syncTime(x);
+  const Ms = syncTorque(x);
+  const pp = conePressure(x);
+  const rb = RbRatio(x);
+  const ta = Math.tan(deg2rad(x[0]));
+  const u = P.u();
+  const p_allow = P.p();
+  const cs = evalConstraints(x);
+  const violations = cs.filter(c=>c.val>c.lim+1e-6).length;
+  const sections = [];
+
+  // S1: 同步时间 (30分)
+  const s1=[];
+  let tScore, tStatus;
+  if(t <= 0.10)      { tScore=30; tStatus='ok'; }
+  else if(t <= 0.15) { tScore=24; tStatus='ok'; }
+  else if(t <= 0.20) { tScore=18; tStatus='warn'; }
+  else if(t <= 0.30) { tScore=12; tStatus='warn'; }
+  else               { tScore=6;  tStatus='err'; }
+  s1.push({name:'同步时间 t', standard:'≤ 0.10s 优秀 · ≤ 0.15s 良好 · ≤ 0.20s 中等',
+    actual:`t = ${fmt(t,4)} s`, score:tScore, max:30, status:tStatus});
+  sections.push({title:'① 同步时间优化效果', items:s1, max:30});
+
+  // S2: 约束满足 (25分)
+  const s2=[];
+  const conScore = violations===0?25: violations===1?15: violations===2?8: 0;
+  const conStatus = violations===0?'ok': violations<=1?'warn':'err';
+  s2.push({name:`约束满足（共${cs.length}项）`, standard:'所有约束均须满足',
+    actual:`满足 ${cs.length-violations}/${cs.length} 项，违反 ${violations} 项`,
+    score:conScore, max:25, status:conStatus});
+  sections.push({title:'② 约束满足度', items:s2, max:25});
+
+  // S3: 锥面比压 (15分)
+  const s3=[];
+  let pScore, pStatus;
+  if(pp <= p_allow*0.8)       { pScore=15; pStatus='ok'; }
+  else if(pp <= p_allow)      { pScore=12; pStatus='ok'; }
+  else if(pp <= p_allow*1.1)  { pScore=6;  pStatus='warn'; }
+  else                        { pScore=2;  pStatus='err'; }
+  s3.push({name:'锥面比压 p', standard:`≤ ${p_allow} MPa 为合格`,
+    actual:`p = ${fmt(pp,4)} MPa (许用值 ${p_allow} MPa)`,
+    score:pScore, max:15, status:pStatus});
+  sections.push({title:'③ 锥面比压验证', items:s3, max:15});
+
+  // S4: R/b比值 (15分)
+  const s4=[];
+  let rbScore, rbStatus;
+  if(rb>=2 && rb<=5)       { rbScore=15; rbStatus='ok'; }
+  else if(rb>=1.8 && rb<=5.5) { rbScore=10; rbStatus='warn'; }
+  else                     { rbScore=3;  rbStatus='err'; }
+  s4.push({name:'R/b 宽径比', standard:'2 ≤ R/b ≤ 5',
+    actual:`R/b = ${fmt(rb,3)}`,
+    score:rbScore, max:15, status:rbStatus});
+  sections.push({title:'④ 宽径比验证', items:s4, max:15});
+
+  // S5: 防自锁 + 优化改进 (15分)
+  const s5=[];
+  let lockScore, lockStatus;
+  if(ta > u*1.05)    { lockScore=10; lockStatus='ok'; }
+  else if(ta > u)    { lockScore=7;  lockStatus='warn'; }
+  else               { lockScore=2;  lockStatus='err'; }
+  s5.push({name:'防自锁 tan(α) > μ', standard:`tan(α) > μ = ${u}`,
+    actual:`tan(α) = ${fmt(ta,5)}, μ = ${u}`,
+    score:lockScore, max:10, status:lockStatus});
+
+  let optScore=0, optStatus='warn';
+  if(isOptimized){ optScore=5; optStatus='ok'; }
+  s5.push({name:'是否完成优化', standard:'需完成优化计算',
+    actual:isOptimized?'✓ 已完成优化':'未优化',
+    score:optScore, max:5, status:optStatus});
+  sections.push({title:'⑤ 安全性与优化', items:s5, max:15});
+
+  const totalScore = sections.reduce((s,sec)=>s+sec.items.reduce((ss,it)=>ss+it.score,0),0);
+  const grade = totalScore>=90?'优秀': totalScore>=80?'良好': totalScore>=70?'中等': totalScore>=60?'及格':'不及格';
+  const gradeColor = totalScore>=90?'#4ddc82': totalScore>=80?'#56b4ff': totalScore>=70?'#ffc645': totalScore>=60?'#ff9a3c':'#ff6b6b';
+
+  return {sections, totalScore, grade, gradeColor, x, violations, t, Ms, pp, rb, ta, isOptimized};
+}
+
+function renderScoreReport(result){
+  const r = result;
+  _lastScoreResult = r;
+  const label = r.isOptimized?'优化后参数':'初始参数';
+  const sym = r.totalScore>=90?'🏆':r.totalScore>=80?'🥇':r.totalScore>=70?'🥈':r.totalScore>=60?'🥉':'⚠️';
+  const dimHtml = r.sections.map(sec=>{
+    const ds=sec.items.reduce((s,it)=>s+it.score,0);
+    return `<div class="sd-item"><div class="sd-lbl">${sec.title}</div><div class="sd-val">${ds}/${sec.max}</div></div>`;
+  }).join('');
+
+  document.getElementById('scoreHero').innerHTML=`
+    <div class="score-hero">
+      <div class="sh-label">同步器优化设计评分（${label}）</div>
+      <div class="sh-total">${r.totalScore}</div>
+      <div class="sh-grade" style="color:${r.gradeColor}">${sym} ${r.grade}</div>
+      <div class="score-dims">${dimHtml}</div>
+    </div>`;
+
+  const statusClass={ok:'badge-ok',warn:'badge-warn',err:'badge-vio'};
+  const statusText={ok:'✓ 优',warn:'△ 中',err:'✗ 差'};
+  let detHtml='';
+  r.sections.forEach(sec=>{
+    const sc=sec.items.reduce((s,it)=>s+it.score,0);
+    detHtml+=`
+      <div class="section-title" style="margin-top:16px;margin-bottom:6px">${sec.title}（${sc}/${sec.max} 分）</div>
+      <table class="score-table">
+        <colgroup><col style="width:22%"><col style="width:24%"><col style="width:30%"><col style="width:10%"><col style="width:14%"></colgroup>
+        <thead><tr><th>评分项目</th><th>标准要求</th><th>实际情况</th><th style="text-align:center">状态</th><th style="text-align:center">得分/满分</th></tr></thead>
+        <tbody>${sec.items.map(it=>`
+          <tr><td><strong>${it.name}</strong></td>
+          <td style="font-size:12px;color:var(--hint-color);line-height:1.5">${it.standard}</td>
+          <td style="line-height:1.5">${it.actual}</td>
+          <td style="text-align:center"><span class="${statusClass[it.status]}">${statusText[it.status]}</span></td>
+          <td style="text-align:center"><span class="${it.score===it.max?'badge-ok':it.score>0?'badge-warn':'badge-vio'}">${it.score}/${it.max}</span></td></tr>`).join('')}
+        </tbody>
+      </table>`;
+  });
+  document.getElementById('scoreDetails').innerHTML=detHtml;
+
+  // Advice
+  const advices=[];
+  if(r.t>0.2) advices.push('📌 <strong>同步时间偏长：</strong>考虑增大换挡力 F 或增大锥面平均半径 R 以缩短同步时间。');
+  if(r.pp>P.p()) advices.push(`📌 <strong>锥面比压超限：</strong>当前 ${fmt(r.pp,4)} MPa > 许用值 ${P.p()} MPa，需增大工作宽度 b 或增大半径 R。`);
+  if(r.rb<2||r.rb>5) advices.push(`📌 <strong>R/b 比值偏离：</strong>当前 ${fmt(r.rb,3)}，推荐 2~5，请调整 R 或 b。`);
+  if(r.ta<=P.u()) advices.push(`📌 <strong>自锁风险：</strong>tan(α)=${fmt(r.ta,5)} ≤ μ=${P.u()}，需增大锥角 α。`);
+  if(r.violations>0) advices.push(`📌 <strong>有 ${r.violations} 项约束未满足：</strong>请检查约束校核表。`);
+  if(!r.isOptimized) advices.push('📌 <strong>未完成优化：</strong>建议运行优化算法后再提交。');
+  if(advices.length===0) advices.push('✅ 设计参数整体合理，各项指标达标！');
+  document.getElementById('scoreAdvice').innerHTML = advices.map(a=>`<p style="margin:0 0 8px 0">${a}</p>`).join('');
+
+  document.getElementById('scoreReportPanel').style.display='block';
+  document.getElementById('scoreReportPanel').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function updateScoreReport(x0, xOpt){
+  const xForScore = xOpt || x0;
+  const isOpt = xOpt !== null;
+  renderScoreReport(computeScore(xForScore, isOpt));
+}
+
+function reCalcScore(){
+  const xR = getRounded();
+  if(xR.some(v=>isNaN(v))) return;
+  renderScoreReport(computeScore(xR, false));
+}
+
+// ════════════════════════════════════════════════════════
+// REPORT GENERATION
+// ════════════════════════════════════════════════════════
+function generateReport(){
+  if(!_lastScoreResult){ alert('请先完成计算并查看评分报告！'); return; }
+  if(!appState.studentId){ alert('请先登录！'); return; }
+  const r=_lastScoreResult;
+  let rpt='═══════════════════════════════════════════════════\n';
+  rpt+='   微车同步器优化设计  —  智能评分报告\n';
+  rpt+='═══════════════════════════════════════════════════\n\n';
+  rpt+=`学号：${appState.studentId}\n姓名：${appState.studentName}\n提交时间：${new Date().toLocaleString('zh-CN')}\n\n`;
+  rpt+=`总分：${r.totalScore} / 100  （${r.grade}）\n`;
+  r.sections.forEach(sec=>{
+    const sc=sec.items.reduce((s,it)=>s+it.score,0);
+    rpt+=`  ${sec.title}：${sc}/${sec.max}\n`;
+  });
+  rpt+='\n【设计变量】\n';
+  r.x.forEach((v,i)=>{ rpt+=`  ${VAR_NAMES[i]}（${VAR_DESC[i]}）= ${fmt(v,4)} ${VAR_UNITS[i]}\n`; });
+  rpt+=`\n【关键结果】\n  同步时间 t = ${fmt(r.t,4)} s\n  同步力矩 M_s = ${fmt(r.Ms,2)} N·mm\n  锥面比压 p = ${fmt(r.pp,4)} MPa\n  R/b = ${fmt(r.rb,3)}\n  tan(α) = ${fmt(r.ta,5)}\n`;
+  rpt+='\n【各维度详细评分】\n';
+  r.sections.forEach(sec=>{
+    rpt+=`\n─── ${sec.title} ───\n`;
+    sec.items.forEach(it=>{
+      const st=it.status==='ok'?'✓ 合格':it.status==='warn'?'△ 偏差':'✗ 不足';
+      rpt+=`  ${it.name}\n    标准：${it.standard}\n    实际：${it.actual}\n    ${st}  得分：${it.score}/${it.max}\n`;
+    });
+  });
+  rpt+='\n═══════════════════════════════════════════════════\n';
+  rpt+='\n--- SYSTEM DATA BEGIN ---\n';
+  rpt+=JSON.stringify({
+    studentId:appState.studentId, studentName:appState.studentName,
+    timestamp:new Date().toISOString(), reportType:'synchro_optimizer',
+    totalScore:r.totalScore, grade:r.grade, isOptimized:r.isOptimized,
+    x:r.x, t:r.t, Ms:r.Ms, pp:r.pp, rb:r.rb, ta:r.ta, violations:r.violations,
+    sections:r.sections
+  },null,2);
+  rpt+='\n--- SYSTEM DATA END ---\n';
+
+  const blob=new Blob([rpt],{type:'text/plain;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`同步器评分报告_${appState.studentId}_${appState.studentName}_${new Date().toISOString().slice(0,10)}.txt`;
+  a.click();
+  alert(`评分报告已生成！\n总分：${r.totalScore} 分（${r.grade}）\n请将 TXT 文件提交给教师。`);
+}
+
+// ════════════════════════════════════════════════════════
+// RUN BUTTONS
+// ════════════════════════════════════════════════════════
+async function runOptimize(){
+  const btn=document.getElementById('btnRun');
+  btn.disabled=true; btn.textContent='⏳ 优化计算中…';
+  document.getElementById('progressPanel').style.display='block';
+  document.getElementById('logBox').innerHTML='';
+  document.getElementById('pFill').style.width='0%';
+
+  const x0=getX0();
+  const progFn=p=>{ document.getElementById('pFill').style.width=Math.round(p*100)+'%'; document.getElementById('pLabel').textContent=`进度 ${Math.round(p*100)}%`; };
+
+  try{
+    const xOpt = await optimize(x0, logMsg, progFn);
+    renderResults(x0, xOpt);
+  }catch(e){
+    logMsg('优化出错: '+e.message,'err');
+    console.error(e);
+  }
+
+  btn.disabled=false; btn.textContent='▶ 开始优化计算';
+}
+
+function evalCurrent(){
+  const x0=getX0();
+  renderResults(x0, null);
+}
+</script>
+
+<!-- ══════════════════════════════════════════════════
+     源代码保护层
+     ══════════════════════════════════════════════════ -->
+<script>
+(function(){
+  'use strict';
+
+  // ── 1. 禁止右键菜单 ──
+  document.addEventListener('contextmenu', function(e){ e.preventDefault(); return false; }, true);
+
+  // ── 2. 禁止键盘快捷键 ──
+  document.addEventListener('keydown', function(e){
+    // F12 — 开发者工具
+    if(e.key === 'F12' || e.keyCode === 123){
+      e.preventDefault(); e.stopPropagation(); return false;
+    }
+    // Ctrl+Shift+I / Ctrl+Shift+J / Ctrl+Shift+C — 检查/控制台/选取元素
+    if(e.ctrlKey && e.shiftKey && (e.key==='I'||e.key==='i'||e.key==='J'||e.key==='j'||e.key==='C'||e.key==='c'||e.keyCode===73||e.keyCode===74||e.keyCode===67)){
+      e.preventDefault(); e.stopPropagation(); return false;
+    }
+    // Ctrl+U — 查看网页源代码
+    if(e.ctrlKey && (e.key==='U'||e.key==='u'||e.keyCode===85)){
+      e.preventDefault(); e.stopPropagation(); return false;
+    }
+    // Ctrl+S — 保存网页
+    if(e.ctrlKey && (e.key==='S'||e.key==='s'||e.keyCode===83)){
+      e.preventDefault(); e.stopPropagation(); return false;
+    }
+    // Ctrl+P — 打印
+    if(e.ctrlKey && (e.key==='P'||e.key==='p'||e.keyCode===80)){
+      e.preventDefault(); e.stopPropagation(); return false;
+    }
+    // Ctrl+A — 全选
+    if(e.ctrlKey && (e.key==='A'||e.key==='a'||e.keyCode===65)){
+      // 仅在输入框外禁止
+      if(e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'){
+        e.preventDefault(); e.stopPropagation(); return false;
+      }
+    }
+    // Ctrl+C / Ctrl+X — 复制/剪切（输入框外禁止）
+    if(e.ctrlKey && (e.key==='C'||e.key==='c'||e.key==='X'||e.key==='x')){
+      if(e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'){
+        e.preventDefault(); e.stopPropagation(); return false;
+      }
+    }
+  }, true);
+
+  // ── 3. 禁止拖拽 ──
+  document.addEventListener('dragstart', function(e){ e.preventDefault(); return false; }, true);
+  document.addEventListener('drop', function(e){ e.preventDefault(); return false; }, true);
+
+  // ── 4. 禁止复制（输入框外） ──
+  document.addEventListener('copy', function(e){
+    if(e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'){
+      e.preventDefault(); return false;
+    }
+  }, true);
+  document.addEventListener('cut', function(e){
+    if(e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'){
+      e.preventDefault(); return false;
+    }
+  }, true);
+
+  // ── 5. DevTools 检测 — debugger 陷阱 ──
+  // 当打开 DevTools 时 debugger 会不断触发暂停
+  (function _dt(){
+    try { (function(){}).constructor('debugger')(); } catch(e){}
+    setTimeout(_dt, 2000);
+  })();
+
+  // ── 6. 检测窗口尺寸变化（DevTools 侧边栏打开时触发） ──
+  var _dw = window.outerWidth - window.innerWidth;
+  var _dh = window.outerHeight - window.innerHeight;
+  var _devWarnShown = false;
+  setInterval(function(){
+    var dw = window.outerWidth - window.innerWidth;
+    var dh = window.outerHeight - window.innerHeight;
+    if((dw > _dw + 160 || dh > _dh + 160) && !_devWarnShown){
+      _devWarnShown = true;
+      // 弹出遮罩
+      var mask = document.createElement('div');
+      mask.id = '_protMask';
+      mask.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.95);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#ff6b6b;font-family:monospace;font-size:22px;text-align:center;padding:40px';
+      mask.innerHTML = '<div style="font-size:64px;margin-bottom:20px">🚫</div><div>检测到开发者工具已打开</div><div style="font-size:14px;color:#888;margin-top:12px">请关闭开发者工具后刷新页面</div>';
+      document.body.appendChild(mask);
+    }
+    if(dw <= _dw + 160 && dh <= _dh + 160 && _devWarnShown){
+      _devWarnShown = false;
+      var mask = document.getElementById('_protMask');
+      if(mask) mask.remove();
+    }
+  }, 800);
+
+  // ── 7. 禁止打印（清空打印内容） ──
+  var _printStyle = document.createElement('style');
+  _printStyle.setAttribute('media','print');
+  _printStyle.textContent = 'body * { display:none!important; } body::after { content:"本页面受保护，禁止打印"; display:block!important; font-size:24px; text-align:center; padding:100px; color:#333; }';
+  document.head.appendChild(_printStyle);
+
+  // ── 8. 控制台警告 ──
+  console.log('%c⚠️ 警告', 'color:#ff6b6b;font-size:36px;font-weight:bold');
+  console.log('%c本页面受到代码保护，请勿尝试查看或复制源代码。', 'color:#ffc645;font-size:14px');
+
+  // ── 9. 清空控制台（延迟执行，反复清理） ──
+  setInterval(function(){ try{console.clear();}catch(e){} }, 3000);
+
+})();
+</script>
+
+</body>
+</html>
